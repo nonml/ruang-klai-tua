@@ -1,13 +1,77 @@
 import { adminDb } from '@/lib/firebaseAdmin';
 
-export async function checkRateLimit(opts: { uid: string; key: string; maxPerDay: number }) {
-  const day = new Date().toISOString().slice(0, 10);
-  const ref = adminDb.collection('rate_limits').doc(`${opts.key}:${opts.uid}:${day}`);
+type RateLimitOptions = {
+  uid: string;
+  key: string;
+  maxPerDay: number;
+  maxPerMinute?: number;
+  ipFingerprint?: string;
+};
 
-  const snap = await ref.get();
-  const used = snap.exists ? (snap.data()!.count as number) : 0;
-  if (used >= opts.maxPerDay) return { ok: false, used };
+type RateLimitResult = {
+  ok: boolean;
+  usedDay: number;
+  usedMinute?: number;
+};
 
-  await ref.set({ count: used + 1, day, uid: opts.uid, key: opts.key }, { merge: true });
-  return { ok: true, used: used + 1 };
+function dayKey(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
+function minuteKey(now: Date): string {
+  return now.toISOString().slice(0, 16);
+}
+
+export async function checkRateLimit(opts: RateLimitOptions): Promise<RateLimitResult> {
+  const now = new Date();
+  const day = dayKey(now);
+  const minute = minuteKey(now);
+
+  const dayRef = adminDb.collection('rate_limits').doc(`day:${opts.key}:${opts.uid}:${day}`);
+  const minuteScope = opts.ipFingerprint ? `${opts.uid}:${opts.ipFingerprint}` : opts.uid;
+  const minuteRef = adminDb.collection('rate_limits').doc(`minute:${opts.key}:${minuteScope}:${minute}`);
+
+  return adminDb.runTransaction(async (tx) => {
+    const [daySnap, minuteSnap] = await Promise.all([tx.get(dayRef), tx.get(minuteRef)]);
+
+    const usedDay = daySnap.exists ? Number(daySnap.data()?.count ?? 0) : 0;
+    if (usedDay >= opts.maxPerDay) {
+      return { ok: false, usedDay };
+    }
+
+    const maxMinute = opts.maxPerMinute ?? Number.POSITIVE_INFINITY;
+    const usedMinute = minuteSnap.exists ? Number(minuteSnap.data()?.count ?? 0) : 0;
+    if (usedMinute >= maxMinute) {
+      return { ok: false, usedDay, usedMinute };
+    }
+
+    tx.set(
+      dayRef,
+      {
+        count: usedDay + 1,
+        key: opts.key,
+        uid: opts.uid,
+        day,
+        updated_at: now.toISOString(),
+      },
+      { merge: true },
+    );
+
+    if (Number.isFinite(maxMinute)) {
+      tx.set(
+        minuteRef,
+        {
+          count: usedMinute + 1,
+          key: opts.key,
+          uid: opts.uid,
+          ip_fingerprint: opts.ipFingerprint ?? null,
+          minute,
+          updated_at: now.toISOString(),
+        },
+        { merge: true },
+      );
+    }
+
+    return { ok: true, usedDay: usedDay + 1, usedMinute: usedMinute + 1 };
+  });
 }

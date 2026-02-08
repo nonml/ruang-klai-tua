@@ -16,7 +16,6 @@ import {
 const Schema = z.object({
   contentType: z.string().min(3).max(100),
   fileExt: z.string().min(1).max(10).regex(/^[a-zA-Z0-9]+$/),
-  reportId: z.string().min(8),
   sizeBytes: z.number().int().positive().max(MAX_UPLOAD_BYTES),
 });
 
@@ -24,14 +23,19 @@ function getStorage() {
   return new Storage();
 }
 
-export async function POST(req: Request) {
+export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
     const user = await requireUser();
+
+    const report = await getReportOwnedBy(params.id, user.uid);
+    if (!report) {
+      return NextResponse.json({ error: 'report_not_found_or_forbidden' }, { status: 404 });
+    }
 
     const ip = getClientIp(req);
     const rl = await checkRateLimit({
       uid: user.uid,
-      key: 'upload',
+      key: 'upload_request',
       maxPerDay: 30,
       maxPerMinute: 8,
       ipFingerprint: getIpFingerprint(ip),
@@ -45,11 +49,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'unsupported_file_type' }, { status: 400 });
     }
 
-    const report = await getReportOwnedBy(parsed.data.reportId, user.uid);
-    if (!report) {
-      return NextResponse.json({ error: 'report_not_found_or_forbidden' }, { status: 404 });
-    }
-
     const tempBucketName = process.env.GCS_BUCKET_TEMP;
     const publicBucketName = process.env.GCS_BUCKET_PUBLIC;
     if (!tempBucketName || !publicBucketName) {
@@ -58,14 +57,14 @@ export async function POST(req: Request) {
 
     const objectName = buildTempObjectName({
       uid: user.uid,
-      reportId: parsed.data.reportId,
+      reportId: params.id,
       fileExt: parsed.data.fileExt,
     });
-
     const publicObjectName = tempToPublicObjectName(objectName);
     const publicUrl = buildPublicUrl(publicBucketName, publicObjectName);
 
-    const file = getStorage().bucket(tempBucketName).file(objectName);
+    const storage = getStorage();
+    const file = storage.bucket(tempBucketName).file(objectName);
 
     const [uploadUrl] = await file.getSignedUrl({
       version: 'v4',
@@ -79,7 +78,6 @@ export async function POST(req: Request) {
       objectName,
       publicObjectName,
       publicUrl,
-      bucket: tempBucketName,
       expiresInSec: 600,
       maxUploadBytes: MAX_UPLOAD_BYTES,
       allowedContentTypes: ALLOWED_CONTENT_TYPES,

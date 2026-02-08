@@ -4,6 +4,7 @@ import { createReport, listReports } from '@/lib/reports';
 import { assessRisk } from '@/lib/risk';
 import { requireUser, authErrorToStatus } from '@/lib/authServer';
 import { checkRateLimit } from '@/lib/ratelimit';
+import { getClientIp, getIpFingerprint } from '@/lib/requestMeta';
 
 const CreateSchema = z.object({
   schoolName: z.string().min(1).max(200).optional(),
@@ -26,8 +27,15 @@ export async function POST(req: Request) {
   try {
     const user = await requireUser();
 
-    const rl = await checkRateLimit({ uid: user.uid, key: 'create_report', maxPerDay: 5 });
-    if (!rl.ok) return NextResponse.json({ error: 'rate_limited', used: rl.used }, { status: 429 });
+    const ip = getClientIp(req);
+    const rl = await checkRateLimit({
+      uid: user.uid,
+      key: 'create_report',
+      maxPerDay: 10,
+      maxPerMinute: 2,
+      ipFingerprint: getIpFingerprint(ip),
+    });
+    if (!rl.ok) return NextResponse.json({ error: 'rate_limited', used: rl.usedDay }, { status: 429 });
 
     const body = await req.json().catch(() => null);
     const parsed = CreateSchema.safeParse(body);
@@ -41,7 +49,6 @@ export async function POST(req: Request) {
     });
 
     const status = risk.score >= 0.8 ? 'HELD' : 'PENDING';
-
     const nowIso = new Date().toISOString();
 
     const created = await createReport({
@@ -60,8 +67,6 @@ export async function POST(req: Request) {
       flag_count: 0,
       owner_uid: user.uid,
     });
-
-    // TODO: Upload pipeline: create signed upload URL -> temp bucket -> blur -> publish URL(s)
 
     return NextResponse.json({ data: created, risk });
   } catch (e) {

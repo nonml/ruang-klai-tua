@@ -16,7 +16,7 @@
 - Risk rules + LLM hook → HELD
 - Auto-blur hook ก่อนเก็บ
 - Report threshold → HIDDEN
-- Rate limit (TODO)
+- Rate limit (รายวัน + รายนาที + IP fingerprint)
 
 ## Controls (หลัง MVP)
 - Trusted tier + weight

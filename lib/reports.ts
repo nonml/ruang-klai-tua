@@ -17,7 +17,7 @@ export type ReportRow = {
   risk_reasons: string[] | null;
   confirm_count: number;
   flag_count: number;
-  owner_uid: string; // Firebase uid
+  owner_uid: string;
 };
 
 const COL = 'reports';
@@ -25,8 +25,7 @@ const COL = 'reports';
 export async function listReports({ limit }: { limit: number }): Promise<ReportRow[]> {
   const snap = await adminDb
     .collection(COL)
-    .where('status', '!=', 'HIDDEN')
-    .orderBy('status')
+    .where('status', 'in', ['PENDING', 'VERIFIED', 'HELD'])
     .orderBy('created_at', 'desc')
     .limit(limit)
     .get();
@@ -34,10 +33,19 @@ export async function listReports({ limit }: { limit: number }): Promise<ReportR
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as ReportRow[];
 }
 
-export async function getReportById(id: string): Promise<ReportRow | null> {
+export async function getReportById(id: string, opts?: { includeHidden?: boolean }): Promise<ReportRow | null> {
   const doc = await adminDb.collection(COL).doc(id).get();
   if (!doc.exists) return null;
-  return { id: doc.id, ...(doc.data() as any) } as ReportRow;
+  const row = { id: doc.id, ...(doc.data() as any) } as ReportRow;
+  if (!opts?.includeHidden && row.status === 'HIDDEN') return null;
+  return row;
+}
+
+export async function getReportOwnedBy(id: string, uid: string): Promise<ReportRow | null> {
+  const report = await getReportById(id, { includeHidden: true });
+  if (!report) return null;
+  if (report.owner_uid !== uid) return null;
+  return report;
 }
 
 export async function createReport(input: Omit<ReportRow, 'id'>): Promise<ReportRow | null> {
@@ -78,7 +86,8 @@ export async function flagReport(id: string, byUid: string): Promise<ReportRow |
     flags[byUid] = true;
     const flag_count = Object.keys(flags).length;
     let status: ReportStatus = r.status;
-    if (flag_count >= 3) status = 'HIDDEN';
+    const confirm_count = Number(r.confirm_count ?? Object.keys((r.confirms ?? {}) as Record<string, boolean>).length);
+    if (flag_count >= 3 && confirm_count < 2) status = 'HIDDEN';
 
     tx.update(ref, { flags, flag_count, status });
     return { id: snap.id, ...r, flags, flag_count, status } as ReportRow;

@@ -1,48 +1,171 @@
-# Deploy บน Google (Firebase + GCP) 🚀
+# Deploy บน GCP/Firebase (Production-ish)
 
-> เป้าหมาย: ใช้บริการ Google ให้ครบวงจร: Auth, Firestore, Storage, Functions, Hosting/Run
+เอกสารนี้ใช้กับแอป "เรื่องใกล้ตัว" (Next.js + Firebase + Cloud Run + Cloud Functions)
 
-## A) ตั้งค่า Firebase Project
-1) สร้าง Firebase project
-2) เปิดใช้:
-- Authentication (Google Sign-in)
-- Firestore
-- Cloud Storage
-- Cloud Functions
+## 0) สิ่งที่ต้องมี
+- `gcloud` CLI
+- `firebase-tools`
+- Docker (ถ้า build local)
+- Billing เปิดบน Google Cloud project
 
-## B) ตั้งค่า Storage buckets
-สร้าง 2 bucket:
-- TEMP: `GCS_BUCKET_TEMP` (private) เช่น `ruangklaitua-temp`
-- PUBLIC: `GCS_BUCKET_PUBLIC` (public-read หรือใช้ signed read ก็ได้) เช่น `ruangklaitua-public`
+## 1) สร้างโปรเจกต์และเปิดบริการ
+```bash
+gcloud auth login
+gcloud config set project <PROJECT_ID>
 
-## C) ตั้งค่า env
-### Next.js (Cloud Run หรือ Hosting + Functions)
-ตั้งค่า env:
-- `GCS_BUCKET_TEMP=...`
-- `GCS_BUCKET_PUBLIC=...`
-- Firebase client vars (`NEXT_PUBLIC_FIREBASE_*`)
-- (Server) ใช้ **ADC** บน GCP (แนะนำ)
+gcloud services enable \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
+  firestore.googleapis.com \
+  storage.googleapis.com \
+  cloudfunctions.googleapis.com \
+  eventarc.googleapis.com \
+  pubsub.googleapis.com \
+  secretmanager.googleapis.com
+```
 
-### Functions
-ตั้งค่า env ของ Functions:
-- `GCS_BUCKET_PUBLIC=...`
+Firebase:
+```bash
+firebase login
+firebase use --add
+```
 
-## D) Deploy แนวทาง 2 แบบ
-### แบบ 1 (แนะนำสำหรับ MVP): Cloud Run สำหรับ Next.js + Firebase Functions สำหรับ blur
-1) Build Next.js และ deploy เข้า Cloud Run
-2) Deploy Functions: `cd functions && npm i && npm run build && firebase deploy --only functions`
-3) ตั้งโดเมน/HTTPS
+เปิดบริการใน Firebase Console:
+- Authentication (Google provider)
+- Firestore (Native mode)
+- Storage
 
-### แบบ 2: Firebase Hosting + Functions (ต้องมี next-on-functions setup)
-Repo นี้ให้สเกลตันไว้ แต่ production แนะนำ Cloud Run จะยืดหยุ่นกว่า
+## 2) สร้าง buckets
+ตั้งชื่อ bucket ตัวอย่าง:
+- TEMP: `<PROJECT_ID>-uploads-temp`
+- PUBLIC: `<PROJECT_ID>-uploads-public`
 
-## E) Flow อัปโหลดภาพ (MVP)
-1) Client ขอ signed URL: `POST /api/uploads/signed-url`
-2) Client PUT รูปไปยัง `gs://TEMP/uploads-temp/{uid}/{ts}.ext`
-3) Function `blurAndPublish` ทำ blur แล้วคัดไป public bucket
-4) Client/Server ผูก public URL เข้ากับ report (แนะนำใส่ reportId ในชื่อ object)
+```bash
+gcloud storage buckets create gs://<PROJECT_ID>-uploads-temp --location=asia-southeast1
+gcloud storage buckets create gs://<PROJECT_ID>-uploads-public --location=asia-southeast1
+```
 
-## TODO ที่ควรให้ Codex ปิดงาน
-- ปรับ naming ให้มี reportId: `uploads-temp/{uid}/{reportId}/{ts}.ext`
-- เพิ่ม endpoint `/api/reports/{id}/attach` เพื่อผูกไฟล์ที่ blur แล้วเข้ากับ report
-- เพิ่ม CORS config ให้ PUT upload ทำงานจากเว็บ
+ทำ PUBLIC bucket ให้อ่านได้:
+```bash
+gcloud storage buckets add-iam-policy-binding gs://<PROJECT_ID>-uploads-public \
+  --member=allUsers \
+  --role=roles/storage.objectViewer
+```
+
+## 3) ตั้ง CORS สำหรับ signed URL PUT
+สร้างไฟล์ `cors-temp.json`:
+```json
+[
+  {
+    "origin": ["https://<YOUR_DOMAIN>", "http://localhost:3000"],
+    "method": ["PUT", "OPTIONS"],
+    "responseHeader": ["Content-Type", "x-goog-resumable"],
+    "maxAgeSeconds": 3600
+  }
+]
+```
+
+ใช้ CORS กับ TEMP bucket:
+```bash
+gcloud storage buckets update gs://<PROJECT_ID>-uploads-temp --cors-file=cors-temp.json
+```
+
+## 4) ตั้งค่า Firestore/Storage Rules + Index
+ใน repo นี้มีไฟล์:
+- `firestore.rules`
+- `storage.rules`
+- `firestore.indexes.json`
+
+Deploy rules/index:
+```bash
+firebase deploy --only firestore:rules,firestore:indexes,storage
+```
+
+## 5) ตั้งค่า Environment Variables
+
+### 5.1 สำหรับ Next.js (Cloud Run)
+ต้องมีค่าต่อไปนี้:
+- `NEXT_PUBLIC_BASE_URL=https://<YOUR_DOMAIN_OR_RUN_URL>`
+- `NEXT_PUBLIC_FIREBASE_API_KEY=...`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID=<PROJECT_ID>`
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=<PROJECT_ID>.appspot.com` (หรือ bucket หลักที่ใช้ client SDK)
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...`
+- `NEXT_PUBLIC_FIREBASE_APP_ID=...`
+- `GCS_BUCKET_TEMP=<PROJECT_ID>-uploads-temp`
+- `GCS_BUCKET_PUBLIC=<PROJECT_ID>-uploads-public`
+- `MAX_UPLOAD_BYTES=10485760` (แนะนำ 10MB ต่อรูป)
+
+หมายเหตุ: Cloud Run/Functions ใช้ ADC ได้ ไม่ต้องใส่ service account JSON หาก IAM ถูกต้อง
+
+### 5.2 สำหรับ Cloud Functions
+ต้องมี:
+- `GCS_BUCKET_PUBLIC=<PROJECT_ID>-uploads-public`
+- `MAX_UPLOAD_BYTES=10485760`
+
+ตั้งค่า (Functions v1 runtime config):
+```bash
+firebase functions:config:set app.gcs_bucket_public="<PROJECT_ID>-uploads-public"
+```
+หรือใช้ env ตามวิธีที่ทีมใช้อยู่ (repo นี้อ่านจาก `process.env.GCS_BUCKET_PUBLIC`)
+
+## 6) Deploy Cloud Functions (blurAndPublish)
+```bash
+cd functions
+npm install
+npm run build
+cd ..
+firebase deploy --only functions
+```
+
+ตรวจว่า trigger ทำงานกับ object finalize และ service account มีสิทธิ์:
+- อ่าน TEMP bucket
+- เขียน PUBLIC bucket
+- เขียน Firestore collections `processed_uploads`, `attachments_pending`
+
+## 7) Deploy Next.js ไป Cloud Run
+
+Build + push image ด้วย Cloud Build:
+```bash
+gcloud builds submit --tag asia-southeast1-docker.pkg.dev/<PROJECT_ID>/ruang-klai-tua/web:latest
+```
+
+Deploy:
+```bash
+gcloud run deploy ruang-klai-tua-web \
+  --image asia-southeast1-docker.pkg.dev/<PROJECT_ID>/ruang-klai-tua/web:latest \
+  --region asia-southeast1 \
+  --platform managed \
+  --allow-unauthenticated \
+  --port 8080 \
+  --set-env-vars NEXT_PUBLIC_BASE_URL=https://<RUN_URL>,GCS_BUCKET_TEMP=<PROJECT_ID>-uploads-temp,GCS_BUCKET_PUBLIC=<PROJECT_ID>-uploads-public,NEXT_PUBLIC_FIREBASE_API_KEY=<...>,NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<...>,NEXT_PUBLIC_FIREBASE_PROJECT_ID=<PROJECT_ID>,NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=<...>,NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=<...>,NEXT_PUBLIC_FIREBASE_APP_ID=<...>
+```
+
+หลัง deploy ให้แก้ `NEXT_PUBLIC_BASE_URL` เป็น custom domain จริงถ้ามี
+
+## 8) ตั้ง Custom Domain (ถ้ามี)
+- ใช้ Cloud Run domain mapping หรือวางหลัง Load Balancer
+- บังคับ HTTPS
+- อัปเดต `NEXT_PUBLIC_BASE_URL` ให้ตรงโดเมนจริง
+
+## 9) Smoke Test Checklist
+1. Login ด้วย Google ได้และได้ session cookie
+2. ส่งรายงานใหม่ได้เมื่อกดยอมรับ consent
+3. แนบรูป 1-3 รูปได้
+4. เส้นทางอัปโหลดทำงานครบ:
+- `POST /api/reports`
+- `POST /api/reports/{id}/attachments/request`
+- PUT signed URL ไป TEMP bucket
+- Function `blurAndPublish` ทำงาน
+- `POST /api/reports/{id}/attachments/commit` สำเร็จ
+5. หน้า `/report/{id}` แสดงรูปจาก `attachments`
+6. ปุ่ม confirm/flag ทำงานและกันกดซ้ำ
+7. report ถูกซ่อนอัตโนมัติเมื่อ `flag_count >= 3`
+  - มี safeguard: ถ้า report มี confirm เพียงพอ ระบบจะไม่ซ่อนอัตโนมัติทันที
+8. เคส risk สูงเริ่มที่สถานะ `HELD`
+
+## 10) หมายเหตุ MVP
+- Query หน้า list ใช้รูปแบบเลี่ยง `where !=` เพื่อไม่ชน index ซับซ้อน
+- หากเปิดใช้ query ซับซ้อนเพิ่ม ให้เพิ่ม index ใน `firestore.indexes.json` แล้ว deploy ใหม่
+- TEMP bucket ถูกเขียนผ่าน signed URL เท่านั้น (client SDK write ถูกปิดด้วย storage rules)

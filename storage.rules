@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /uploads-temp/{uid}/{reportId}/{fileName} {
+      // ใช้ signed URL จาก server เท่านั้น (client SDK access ปิด)
+      allow read, write: if false;
+    }
+
+    match /uploads-public/{uid}/{reportId}/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

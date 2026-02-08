@@ -26,44 +26,16 @@
 
 ---
 
-## 2) ขอบเขต MVP (2 สัปดาห์) — *เน้นให้ “มีของจริง” เร็วที่สุด* ⏱️
+## 2) MVP Plan
 
-> MVP รอบแรกโฟกัส **หมวดโรงเรียน** เพื่อพิสูจน์ระบบ จากนั้นค่อยเปิดเป็น multi-purpose เต็มรูปแบบ
+The full MVP plan is now in a dedicated file:
 
-### MVP Features
-1) **Login ด้วย LINE** (อย่างน้อยต้อง trace ผู้โพสต์ได้)
-2) หน้า **ใกล้ฉัน**: แผนที่ + รายการเคสล่าสุด
-3) หน้า **ส่งหลักฐาน**: ฟอร์ม 7 ช่อง + อัปโหลดรูป
-4) หน้า **ดูเคส**: รูป/รายละเอียด/สถานะ/ปุ่ม “ยืนยัน” และ “รายงาน”
-5) **ระบบสถานะเคส**
-   - `PENDING` = ยังไม่ยืนยัน (default)
-   - `VERIFIED` = ตรวจแล้ว (ตามกติกายืนยัน)
-   - `HELD` = ถูก hold เพราะ risk สูง (อัตโนมัติ)
-   - `HIDDEN` = ถูกซ่อน (รายงานถึง threshold หรือ policy)
-6) **Auto-blur** ก่อนจัดเก็บ (หน้า/ทะเบียน/บ้านเลขที่/ข้อมูลเด็ก/ข้อมูลส่วนบุคคล)
-7) **Risk gate (LLM/Rules)**
-   - ตรวจข้อความ/ผล OCR ว่ามี PII/การกล่าวหา/คำเสี่ยง → `HELD`
-8) **Crowd confirmation**
-   - เปลี่ยนเป็น `VERIFIED` เมื่อได้ **2 การยืนยันจากบัญชีต่างกัน**
-   - (รองรับ trusted tier ในเฟสถัดไป)
+- `docs/MVP_PLAN.md`
 
-### ฟอร์ม 7 ช่อง (MVP)
-- รูปหลักฐาน 1–3 รูป *(บังคับ)*
-- พิกัด *(บังคับ)*
-- โรงเรียน *(เลือกจากค้นหา + พิมพ์ได้)*
-- ประเภทปัญหา *(dropdown)*
-- ความเร่งด่วน *(ต่ำ/กลาง/สูง)*
-- “สิ่งที่เห็น” *(preset + ข้อความสั้น <= 200 ตัวอักษร)*
-- วันที่พบ *(auto วันนี้, แก้ได้)*
-
-### ประเภทปัญหา (MVP dropdown)
-- ห้องน้ำ/สุขาภิบาล
-- น้ำดื่ม/น้ำใช้
-- ไฟฟ้า/แสงสว่าง
-- อาคารชำรุด/อันตราย
-- อุปกรณ์เรียน/ห้องเรียน
-- ความปลอดภัยหน้าโรงเรียน/ทางม้าลาย/การจราจร
-- อาหารกลางวัน *(เชิงสังเกต — ห้ามกล่าวหา)*
+This includes:
+- scope for the first 2 weeks
+- MVP features and form fields
+- phase-0 checklist and success metrics
 
 ---
 
@@ -160,20 +132,7 @@ civic-info-hub-th/
 > คีย์เวิร์ด: *เริ่มเล็ก → วัดผล → ลดความเสี่ยง → ค่อยขยาย*
 
 ### Phase 0 — สัปดาห์ 0–2 (MVP Pilot)
-**Outcome:** มีเคสจริง ≥ 30 เคส ที่ “รูป+พิกัดครบ” และระบบไม่พัง  
-**งานหลัก**
-- [ ] Login LINE + consent (Terms/PDPA)
-- [ ] ฟอร์ม 7 ช่อง + upload + แผนที่ใกล้ฉัน
-- [ ] สเตตัส `PENDING/VERIFIED/HELD/HIDDEN`
-- [ ] report/confirm
-- [ ] baseline risk rules (keyword + PII regex)
-- [ ] auto-blur placeholder (pipeline hook)
-- [ ] LINE OA template: การ์ดแชร์ (share card)
-
-**Metric**
-- ≥ 30 เคส / 14 วัน
-- ≥ 20% กลับมาใช้อีกใน 7 วัน
-- < 5% เคสที่เข้าข่ายเสี่ยงแล้วหลุดออกสาธารณะ
+รายละเอียดแผน MVP (scope/checklist/metrics) ย้ายไปที่ `docs/MVP_PLAN.md`
 
 ---
 
@@ -295,6 +254,16 @@ civic-info-hub-th/
 
 ---
 
+## เอกสารปฏิบัติการ (Operational Docs)
+- `docs/RESEARCH_DECISIONS.md` สรุป decision จากงานวิจัย
+- `docs/GO_LIVE_CHECKLIST.md` รายการตรวจสอบก่อนเปิดจริง
+- `docs/IAM_MINIMUM_ROLES.md` บทบาท IAM ขั้นต่ำ (least privilege)
+- `docs/LOGGING_PDPA.md` แนวทาง logging/restriction ตาม PDPA
+- `docs/THAI_SAFE_WORDING.md` คำแนะนำถ้อยคำไทยเพื่อลดความเสี่ยงหมิ่นประมาท
+- `docs/COST_MODEL_MVP.md` แนวทางประมาณค่าใช้จ่าย MVP
+
+---
+
 ## 10) License
 - โค้ด: **AGPL-3.0** (ดู `LICENSE`)
 - ข้อมูลผู้ใช้: **CC BY 4.0** *(แต่มีสิทธิ์ลบ/ซ่อนตาม policy)*
@@ -308,6 +277,9 @@ civic-info-hub-th/
 
 
 ## 11) อัปโหลดรูปแบบปลอดภัย (GCP)
-- ใช้ `POST /api/uploads/signed-url` เพื่อขอ signed URL แล้วอัปโหลดเข้า bucket TEMP
+- สร้าง report ก่อน แล้วใช้ `POST /api/reports/{id}/attachments/request` ขอ signed URL
+- อัปโหลดไป path `uploads-temp/{uid}/{reportId}/{timestamp}.ext`
+- จำกัดไฟล์รูปเฉพาะ `JPG/PNG/WEBP` และขนาดสูงสุด 10MB/รูป
 - Cloud Function `blurAndPublish` จะทำ blur แล้วคัดไป bucket PUBLIC
+- จากนั้นเรียก `POST /api/reports/{id}/attachments/commit` เพื่อผูกไฟล์ที่ผ่าน blur กับรายงาน
 - ดูรายละเอียด: `docs/DEPLOY_GCP.md` และ `docs/GCP_PIPELINE_BLUR.md`
